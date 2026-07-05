@@ -1,38 +1,23 @@
-# Compiled source #
-###################
-*.com
-*.class
-*.dll
-*.exe
-*.o
-*.so
+# Forensic outputs (generated at runtime)
+forensic_outputs/
+m5_forensic_outputs/
 
-# Packages #
-############
-# it's better to unpack these files and commit the raw source
-# git has its own built in compression methods
-*.7z
-*.dmg
-*.gz
-*.iso
-*.jar
-*.rar
-*.tar
-*.zip
+# Media artifacts
+*.mp4
+*.mkv
+*.mp3
+*.wav
+*.m4a
+*.mov
+*.vtt
+*.srt
 
-# Logs and databases #
-######################
-*.log
-*.sql
-*.sqlite
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
 
-# OS generated files #
-######################
+# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
