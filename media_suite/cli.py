@@ -19,34 +19,35 @@ from media_suite.config import (
     WEBHOOK_TOKEN,
 )
 from media_suite.dashboard import run_dashboard
-from media_suite.encoders import PRORES_PROFILES
+from media_suite.encoders import OUTPUT_FORMATS, PRORES_PROFILES
+from media_suite.input import expand_inputs, resolve_input
 from media_suite.pipeline import run_batch, run_transcode, run_transcode_prores
-from media_suite.probe import expand_playlist
 from media_suite.upload import upload_configured
 from media_suite.webhook import run_webhook_server
+
+INPUT_HELP = "Local file path, folder, or remote URL (YouTube and 1000+ sites via yt-dlp)"
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="m5-forensic-media-suite",
         description=(
-            "Industry-grade YouTube → media pipeline: yt-dlp memory pipes, "
-            "FFmpeg hardware encoders (VideoToolbox on Apple Silicon), "
-            "HDR/5.1 preservation, subtitles, SHA-256 forensic manifest, "
-            "S3/NAS upload, webhook queue API, and ProRes mastering."
+            "Universal any-to-any media pipeline: local files, folders, and remote URLs "
+            "(including YouTube). FFmpeg hardware encoders on Apple Silicon, SHA-256 "
+            "forensic manifest, S3/NAS upload, webhook queue API, and ProRes mastering."
         ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    convert = sub.add_parser("convert", help="Convert a single URL")
-    convert.add_argument("url", help="YouTube URL")
+    convert = sub.add_parser("convert", help="Convert one file or URL to any format")
+    convert.add_argument("input", help=INPUT_HELP)
     convert.add_argument(
         "-f",
         "--format",
         default=DEFAULT_FORMAT,
-        choices=["mp4", "mkv", "mp3", "wav", "m4a", "prores"],
+        choices=OUTPUT_FORMATS,
         help="Output container/codec profile",
     )
     convert.add_argument("--no-subs", action="store_true", help="Skip subtitle embedding")
@@ -64,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     convert.add_argument(
         "--no-classify",
         action="store_true",
-        help="Disable music → audio-only folder routing",
+        help="Disable audio-only auto-routing",
     )
     convert.add_argument(
         "--no-upload",
@@ -72,8 +73,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip S3/NAS upload even when configured",
     )
 
-    prores = sub.add_parser("prores", help="ProRes mastering workflow (outputs .mov)")
-    prores.add_argument("url", help="YouTube URL")
+    prores = sub.add_parser("prores", help="ProRes mastering (local file or URL → .mov)")
+    prores.add_argument("input", help=INPUT_HELP)
     prores.add_argument(
         "--profile",
         default=DEFAULT_PRORES_PROFILE,
@@ -83,14 +84,14 @@ def build_parser() -> argparse.ArgumentParser:
     prores.add_argument("--no-subs", action="store_true")
     prores.add_argument("--no-upload", action="store_true")
 
-    batch = sub.add_parser("batch", help="Convert a playlist URL")
-    batch.add_argument("url", help="Playlist or video URL")
-    batch.add_argument("-f", "--format", default=DEFAULT_FORMAT)
+    batch = sub.add_parser("batch", help="Batch convert a folder, playlist, or URL list")
+    batch.add_argument("input", help="Local folder, playlist URL, or single file/URL")
+    batch.add_argument("-f", "--format", default=DEFAULT_FORMAT, choices=OUTPUT_FORMATS)
     batch.add_argument("--profile", default=DEFAULT_PRORES_PROFILE, choices=list(PRORES_PROFILES))
     batch.add_argument("--no-subs", action="store_true")
     batch.add_argument("--no-upload", action="store_true")
 
-    serve = sub.add_parser("serve", help="Start webhook API to queue links remotely")
+    serve = sub.add_parser("serve", help="Start webhook API to queue jobs remotely")
     serve.add_argument("--host", default=WEBHOOK_HOST)
     serve.add_argument("--port", type=int, default=WEBHOOK_PORT)
 
@@ -126,6 +127,7 @@ def cmd_doctor() -> int:
     print(f"  aac_at: {aac_at_available()}")
     print(f"  Output directory: {OUTPUT_DIR.resolve()}")
     print(f"  ProRes directory: {PRORES_OUTPUT_DIR.resolve()}")
+    print(f"  Output formats: {', '.join(OUTPUT_FORMATS)}")
     print(f"  Upload enabled: {UPLOAD_ENABLED} | configured: {upload_configured()}")
     if S3_BUCKET:
         print(f"  S3 bucket: {S3_BUCKET}")
@@ -169,23 +171,31 @@ def main(argv: list[str] | None = None) -> int:
     kwargs = _transcode_kwargs(args)
 
     if args.command == "prores":
-        result = run_transcode_prores(args.url, profile=args.profile, **kwargs)
+        result = run_transcode_prores(args.input, profile=args.profile, **kwargs)
         if not result.success:
             print(result.error, file=sys.stderr)
             return 1
         return 0
 
     if args.command == "convert":
-        result = run_transcode(args.url, args.format, **kwargs)
+        try:
+            resolve_input(args.input)
+        except ValueError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        result = run_transcode(args.input, args.format, **kwargs)
         if not result.success:
             print(result.error, file=sys.stderr)
             return 1
         return 0
 
     if args.command == "batch":
-        urls = expand_playlist(args.url)
-        print(f"Resolved {len(urls)} track(s)")
-        results = run_batch(urls, args.format, **kwargs)
+        sources = expand_inputs(args.input)
+        if not sources:
+            print("No inputs resolved.", file=sys.stderr)
+            return 1
+        print(f"Resolved {len(sources)} input(s)")
+        results = run_batch(sources, args.format, **kwargs)
         failed = sum(1 for r in results if not r.success)
         return 1 if failed else 0
 

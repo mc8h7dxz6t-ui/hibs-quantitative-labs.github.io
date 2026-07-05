@@ -194,7 +194,52 @@ def build_encoder_plan(
             container_extension="m4a",
         )
 
+    if fmt == "mov":
+        plan = build_encoder_plan("mp4", profile, normalize_lufs=normalize_lufs)
+        plan.container_extension = "mov"
+        return plan
+
+    if fmt == "webm":
+        return EncoderPlan(
+            args=[
+                "-c:v",
+                "libvpx-vp9",
+                "-crf",
+                "32",
+                "-b:v",
+                "0",
+                "-c:a",
+                "libopus",
+                "-b:a",
+                "192k",
+                *layout,
+            ],
+            video_encoder="libvpx-vp9",
+            audio_encoder="libopus",
+            container_extension="webm",
+        )
+
+    if fmt == "flac":
+        flac_layout = _audio_layout(profile.audio_channels) if profile.audio_channels >= 6 else ["-ac", "2"]
+        return EncoderPlan(
+            args=["-vn", "-c:a", "flac", *flac_layout],
+            video_encoder="none",
+            audio_encoder="flac",
+            container_extension="flac",
+        )
+
+    if fmt == "ogg":
+        return EncoderPlan(
+            args=["-vn", "-c:a", "libvorbis", "-q:a", "6", "-ar", "48000", "-ac", "2"],
+            video_encoder="none",
+            audio_encoder="libvorbis",
+            container_extension="ogg",
+        )
+
     raise ValueError(
         f"Unsupported output format '{output_format}'. "
-        "Supported: mp4, mkv, mp3, wav, m4a, prores."
+        "Supported: mp4, mkv, mov, webm, mp3, wav, m4a, flac, ogg, prores."
     )
+
+
+OUTPUT_FORMATS = ["mp4", "mkv", "mov", "webm", "mp3", "wav", "m4a", "flac", "ogg", "prores"]

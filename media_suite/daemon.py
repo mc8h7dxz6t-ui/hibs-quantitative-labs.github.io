@@ -6,9 +6,9 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from media_suite.config import DEFAULT_FORMAT, OUTPUT_DIR
+from media_suite.config import DEFAULT_FORMAT, OUTPUT_DIR, WATCH_FILE
+from media_suite.input import expand_inputs
 from media_suite.pipeline import run_transcode, run_transcode_prores
-from media_suite.probe import expand_playlist
 from media_suite.queue import ensure_watch_file
 
 
@@ -44,16 +44,16 @@ class DaemonState:
 
 
 def _parse_queue_line(line: str) -> tuple[str, str, str | None]:
-    """Return (url, format, prores_profile)."""
+    """Return (source, format, prores_profile)."""
     raw = line.strip()
     if "|" not in raw:
         return raw, DEFAULT_FORMAT, None
 
-    url, suffix = [part.strip() for part in raw.split("|", 1)]
+    source, suffix = [part.strip() for part in raw.split("|", 1)]
     if suffix.lower().startswith("prores:"):
         profile = suffix.split(":", 1)[1].strip() or "hq"
-        return url, "prores", profile
-    return url, suffix or DEFAULT_FORMAT, None
+        return source, "prores", profile
+    return source, suffix or DEFAULT_FORMAT, None
 
 
 def watch_folder_daemon(
@@ -69,26 +69,24 @@ def watch_folder_daemon(
 
     while not stop.is_set():
         try:
-            from media_suite.config import WATCH_FILE
-
             lines = WATCH_FILE.read_text(encoding="utf-8").splitlines()
             entries = [ln for ln in lines if ln.strip() and not ln.strip().startswith("#")]
 
             if not entries:
-                state.update(status="Awaiting links in queue file…", current_job="Idle")
+                state.update(status="Awaiting files or URLs in queue…", current_job="Idle")
             else:
                 raw_line = entries[0]
-                target_url, fmt, prores_profile = _parse_queue_line(raw_line)
+                target, fmt, prores_profile = _parse_queue_line(raw_line)
                 fmt = fmt or output_format
-                state.update(status="Resolving playlist entries…", current_job=target_url)
+                state.update(status="Resolving batch inputs…", current_job=target)
 
-                urls = expand_playlist(target_url)
-                total = len(urls)
+                sources = expand_inputs(target)
+                total = len(sources)
 
-                for idx, url in enumerate(urls, start=1):
+                for idx, source in enumerate(sources, start=1):
                     state.update(
-                        status=f"Processing track [{idx}/{total}]…",
-                        current_job=url,
+                        status=f"Processing [{idx}/{total}]…",
+                        current_job=source,
                     )
 
                     def on_status(msg: str, i=idx, t=total) -> None:
@@ -96,12 +94,12 @@ def watch_folder_daemon(
 
                     if fmt == "prores":
                         result = run_transcode_prores(
-                            url,
+                            source,
                             profile=prores_profile or "hq",
                             on_status=on_status,
                         )
                     else:
-                        result = run_transcode(url, fmt, on_status=on_status)
+                        result = run_transcode(source, fmt, on_status=on_status)
 
                     if result.telemetry:
                         state.update(

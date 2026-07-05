@@ -13,20 +13,26 @@ _queue_lock = threading.Lock()
 def ensure_watch_file() -> None:
     if not WATCH_FILE.exists():
         WATCH_FILE.write_text(
-            "# Drop YouTube URLs or playlists here — one per line.\n"
-            "# Optional format suffix: URL | mp3\n"
-            "# ProRes master: URL | prores:hq\n",
+            "# One job per line: local file, folder, or URL (YouTube etc.)\n"
+            "# Optional format: /path/to/video.mkv | mp4\n"
+            "# ProRes: /path/to/clip.mov | prores:hq\n"
+            "# Folder batch: /path/to/inbox/ | mp3\n",
             encoding="utf-8",
         )
 
 
-def enqueue_url(url: str, output_format: str | None = None, *, prores_profile: str | None = None) -> Path:
-    """Append a URL to the watch queue (format/profile optional)."""
+def enqueue_source(
+    source: str,
+    output_format: str | None = None,
+    *,
+    prores_profile: str | None = None,
+) -> Path:
+    """Append a file path, folder, or URL to the watch queue."""
     ensure_watch_file()
     fmt = output_format or DEFAULT_FORMAT
-    line = url.strip()
+    line = source.strip()
     if not line:
-        raise ValueError("URL cannot be empty")
+        raise ValueError("Input cannot be empty")
 
     if fmt == "prores" and prores_profile:
         payload = f"{line} | prores:{prores_profile}"
@@ -42,6 +48,11 @@ def enqueue_url(url: str, output_format: str | None = None, *, prores_profile: s
             handle.write(f"{suffix}{payload}\n")
 
     return WATCH_FILE
+
+
+def enqueue_url(url: str, output_format: str | None = None, *, prores_profile: str | None = None) -> Path:
+    """Backward-compatible alias."""
+    return enqueue_source(url, output_format, prores_profile=prores_profile)
 
 
 def queue_depth() -> int:

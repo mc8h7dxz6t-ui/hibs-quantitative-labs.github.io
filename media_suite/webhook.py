@@ -9,7 +9,7 @@ from typing import Callable
 from urllib.parse import urlparse
 
 from media_suite.config import WEBHOOK_HOST, WEBHOOK_PORT, WEBHOOK_TOKEN
-from media_suite.queue import enqueue_url, queue_depth
+from media_suite.queue import enqueue_source, queue_depth
 
 HandlerFactory = Callable[[], type[BaseHTTPRequestHandler]]
 
@@ -26,7 +26,7 @@ def _authorized(headers, body: dict) -> bool:
 
 def create_handler() -> type[BaseHTTPRequestHandler]:
   class WebhookHandler(BaseHTTPRequestHandler):
-    server_version = "ForensicMediaSuite/1.1"
+    server_version = "ForensicMediaSuite/1.2"
 
     def log_message(self, format: str, *args) -> None:  # noqa: A003
         return  # quiet default access log
@@ -71,16 +71,16 @@ def create_handler() -> type[BaseHTTPRequestHandler]:
             self._send_json(401, {"error": "unauthorized"})
             return
 
-        url = (body.get("url") or "").strip()
-        if not url:
-            self._send_json(400, {"error": "url is required"})
+        source = (body.get("input") or body.get("url") or body.get("path") or "").strip()
+        if not source:
+            self._send_json(400, {"error": "input (or url/path) is required"})
             return
 
         fmt = (body.get("format") or "mp4").strip().lower()
         profile = (body.get("prores_profile") or body.get("profile") or "").strip().lower() or None
 
         try:
-            queue_path = enqueue_url(url, fmt, prores_profile=profile)
+            queue_path = enqueue_source(source, fmt, prores_profile=profile)
         except ValueError as exc:
             self._send_json(400, {"error": str(exc)})
             return
@@ -89,7 +89,7 @@ def create_handler() -> type[BaseHTTPRequestHandler]:
             202,
             {
                 "status": "queued",
-                "url": url,
+                "input": source,
                 "format": fmt,
                 "prores_profile": profile,
                 "queue_file": str(queue_path.resolve()),
@@ -113,7 +113,7 @@ def run_webhook_server(
 
     if block:
         print(f"[*] Webhook API listening on http://{bind_host}:{bind_port}")
-        print("[*] POST /queue  — JSON: {\"url\": \"...\", \"format\": \"mp4\"}")
+        print("[*] POST /queue  — JSON: {\"input\": \"file or URL\", \"format\": \"mp4\"}")
         print("[*] GET  /health — liveness probe")
         server.serve_forever()
     return server

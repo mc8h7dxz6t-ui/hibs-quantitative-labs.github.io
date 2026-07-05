@@ -1,3 +1,4 @@
-# Drop YouTube URLs or playlists here — one per line.
-# Optional per-line format override: URL | mp3
-# ProRes master: https://www.youtube.com/watch?v=EXAMPLE | prores:hq
+# One job per line — local file, folder, or URL (YouTube etc.)
+# /path/to/video.mkv | mp4
+# /path/to/inbox/ | mp3
+# https://www.youtube.com/watch?v=EXAMPLE | prores:hq

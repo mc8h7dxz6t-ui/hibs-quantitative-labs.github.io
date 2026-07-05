@@ -1,11 +1,12 @@
 # Forensic Media Suite
 
-Industry-grade **YouTube → any format** pipeline for macOS Apple Silicon (M-series) and cross-platform hosts. Built on the two gold-standard tools:
+Universal **any file → any format** pipeline for macOS Apple Silicon and cross-platform hosts. Convert **local media files**, **entire folders**, or **remote URLs** (YouTube and 1000+ sites) using industry-standard tools:
 
 - **[FFmpeg](https://ffmpeg.org/)** — transcoding, muxing, broadcast filters
-- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — stream extraction and metadata probing
+- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — remote stream extraction (not needed for local files)
+- **[ffprobe](https://ffmpeg.org/ffprobe.html)** — local file metadata
 
-No heavy Python wrapper layers. The suite drives native CLI binaries via **zero-copy memory pipes** (`yt-dlp` stdout → `ffmpeg` stdin), selects **hardware encoders** when available, and writes a **SHA-256 forensic manifest** for every output.
+No heavy Python wrapper layers. Remote URLs stream through **zero-copy memory pipes** (`yt-dlp` stdout → `ffmpeg` stdin). Local files are read directly by FFmpeg. Every output gets a **SHA-256 forensic manifest**.
 
 ## Technical edge
 
@@ -49,16 +50,24 @@ Verify tooling:
 python m5_forensic_media_suite.py doctor
 ```
 
-Convert a single URL:
+Convert a local file:
+
+```bash
+python m5_forensic_media_suite.py convert "/path/to/movie.mkv" -f mp4
+python m5_forensic_media_suite.py convert "/path/to/track.flac" -f mp3
+```
+
+Convert a remote URL (YouTube, etc.):
 
 ```bash
 python m5_forensic_media_suite.py convert "https://www.youtube.com/watch?v=VIDEO_ID" -f mp4
 ```
 
-Batch a playlist:
+Batch an entire folder or playlist:
 
 ```bash
-python m5_forensic_media_suite.py batch "https://www.youtube.com/playlist?list=PLAYLIST_ID" -f mp3
+python m5_forensic_media_suite.py batch "/path/to/inbox/" -f mp3
+python m5_forensic_media_suite.py batch "https://www.youtube.com/playlist?list=PLAYLIST_ID" -f m4a
 ```
 
 Watch-folder daemon with terminal dashboard:
@@ -139,10 +148,14 @@ Destinations are logged in `forensic_manifest.log` under `UPLOAD=`.
 |------|-----------|-------|
 | `mp4` | H.264 + AAC | `+faststart`, HDR when detected |
 | `mkv` | HEVC + AAC | Archive-oriented |
+| `mov` | H.264 + AAC | QuickTime container |
+| `webm` | VP9 + Opus | Web delivery |
 | `mp3` | MP3 VBR | 48 kHz |
 | `wav` | PCM 16-bit | Broadcast sample rate |
 | `m4a` | AAC | Audio-only |
-| `prores` | ProRes `.mov` | `prores` command or `-f prores --profile hq` |
+| `flac` | FLAC | Lossless audio |
+| `ogg` | Vorbis | Open audio |
+| `prores` | ProRes `.mov` | `prores` command or `-f prores` |
 
 ### Extra flags
 
@@ -154,20 +167,21 @@ Destinations are logged in `forensic_manifest.log` under `UPLOAD=`.
 ## Architecture
 
 ```
-YouTube CDN
-    │  HTTPS
-    ▼
- yt-dlp  (-o -)  ──stdout pipe──►  ffmpeg  (-i pipe:0)
-                                      │
-                    ┌─────────────────┼─────────────────┐
-                    ▼                 ▼                 ▼
-            VideoToolbox ASIC   AudioToolbox AAC   mov_text/srt
-                    │                 │                 │
-                    └────────► forensic_outputs/ ◄──────┘
-                                      │
-                               SHA-256 manifest
-                                      │
-                         S3 / NAS / rsync upload
+Local file / URL / folder
+        │
+        ├─ local ──► ffprobe metadata ──► ffmpeg -i file
+        │
+        └─ remote ─► yt-dlp (-o -) ──pipe──► ffmpeg (-i pipe:0)
+                        │
+        ┌───────────────┼───────────────┐
+        ▼               ▼               ▼
+ VideoToolbox      AudioToolbox     subtitles
+        │               │               │
+        └──────► forensic_outputs/ ◄───┘
+                        │
+                 SHA-256 manifest
+                        │
+              S3 / NAS / rsync upload
 ```
 
 ## Environment variables
@@ -189,7 +203,8 @@ media_suite/
   cli.py           # argparse entry
   pipeline.py      # core transcode + ProRes workflow
   encoders.py      # platform codec matrices
-  probe.py         # yt-dlp metadata + playlists
+  input.py         # local file / folder / URL detection
+  probe.py         # ffprobe + yt-dlp metadata
   queue.py         # thread-safe queue file
   webhook.py       # remote queue HTTP API
   upload.py        # S3 / NAS / rsync after verify
