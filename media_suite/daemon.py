@@ -6,9 +6,10 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from media_suite.config import DEFAULT_FORMAT, OUTPUT_DIR, WATCH_FILE
-from media_suite.pipeline import run_transcode
+from media_suite.config import DEFAULT_FORMAT, OUTPUT_DIR
+from media_suite.pipeline import run_transcode, run_transcode_prores
 from media_suite.probe import expand_playlist
+from media_suite.queue import ensure_watch_file
 
 
 @dataclass
@@ -42,20 +43,17 @@ class DaemonState:
                 self.live_speed = speed
 
 
-def ensure_watch_file() -> None:
-    if not WATCH_FILE.exists():
-        WATCH_FILE.write_text(
-            "# Drop YouTube URLs or playlists here — one per line.\n"
-            "# Optional format suffix: URL | mp3\n",
-            encoding="utf-8",
-        )
+def _parse_queue_line(line: str) -> tuple[str, str, str | None]:
+    """Return (url, format, prores_profile)."""
+    raw = line.strip()
+    if "|" not in raw:
+        return raw, DEFAULT_FORMAT, None
 
-
-def _parse_queue_line(line: str) -> tuple[str, str]:
-    if "|" in line:
-        url, fmt = [part.strip() for part in line.split("|", 1)]
-        return url, fmt or DEFAULT_FORMAT
-    return line.strip(), DEFAULT_FORMAT
+    url, suffix = [part.strip() for part in raw.split("|", 1)]
+    if suffix.lower().startswith("prores:"):
+        profile = suffix.split(":", 1)[1].strip() or "hq"
+        return url, "prores", profile
+    return url, suffix or DEFAULT_FORMAT, None
 
 
 def watch_folder_daemon(
@@ -71,6 +69,8 @@ def watch_folder_daemon(
 
     while not stop.is_set():
         try:
+            from media_suite.config import WATCH_FILE
+
             lines = WATCH_FILE.read_text(encoding="utf-8").splitlines()
             entries = [ln for ln in lines if ln.strip() and not ln.strip().startswith("#")]
 
@@ -78,7 +78,7 @@ def watch_folder_daemon(
                 state.update(status="Awaiting links in queue file…", current_job="Idle")
             else:
                 raw_line = entries[0]
-                target_url, fmt = _parse_queue_line(raw_line)
+                target_url, fmt, prores_profile = _parse_queue_line(raw_line)
                 fmt = fmt or output_format
                 state.update(status="Resolving playlist entries…", current_job=target_url)
 
@@ -94,7 +94,15 @@ def watch_folder_daemon(
                     def on_status(msg: str, i=idx, t=total) -> None:
                         state.update(status=f"[{i}/{t}] {msg}")
 
-                    result = run_transcode(url, fmt, on_status=on_status)
+                    if fmt == "prores":
+                        result = run_transcode_prores(
+                            url,
+                            profile=prores_profile or "hq",
+                            on_status=on_status,
+                        )
+                    else:
+                        result = run_transcode(url, fmt, on_status=on_status)
+
                     if result.telemetry:
                         state.update(
                             fps=result.telemetry.fps,

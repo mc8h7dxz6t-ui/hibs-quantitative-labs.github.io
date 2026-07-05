@@ -26,14 +26,16 @@ def append_manifest(
     end_fps: str,
     encoder_video: str,
     encoder_audio: str,
+    upload_destinations: list[str] | None = None,
 ) -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     manifest = OUTPUT_DIR / "forensic_manifest.log"
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    upload_field = ",".join(upload_destinations) if upload_destinations else "local-only"
     line = (
         f"TIMESTAMP={stamp} | URL={url} | FILE={output_path.name} | "
         f"SHA256={file_hash} | FPS={end_fps} | SPEED={end_speed} | "
-        f"VENC={encoder_video} | AENC={encoder_audio}\n"
+        f"VENC={encoder_video} | AENC={encoder_audio} | UPLOAD={upload_field}\n"
     )
     with manifest.open("a", encoding="utf-8") as handle:
         handle.write(line)
