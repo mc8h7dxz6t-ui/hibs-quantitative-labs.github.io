@@ -1,223 +1,152 @@
-# Forensic Media Suite
+# Forensic Media Suite v2
 
-Universal **any file → any format** pipeline for macOS Apple Silicon and cross-platform hosts. Convert **local media files**, **entire folders**, or **remote URLs** (YouTube and 1000+ sites) using industry-standard tools:
+Production **any file → any format** media farm with legal chain-of-custody, strict stream preservation policies, SQLite job queue, and internet-facing FastAPI.
 
-- **[FFmpeg](https://ffmpeg.org/)** — transcoding, muxing, broadcast filters
-- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — remote stream extraction (not needed for local files)
-- **[ffprobe](https://ffmpeg.org/ffprobe.html)** — local file metadata
+## Architecture (v2)
 
-No heavy Python wrapper layers. Remote URLs stream through **zero-copy memory pipes** (`yt-dlp` stdout → `ffmpeg` stdin). Local files are read directly by FFmpeg. Every output gets a **SHA-256 forensic manifest**.
+```
+                    ┌─────────────┐
+  Phone / API ─────►│ FastAPI     │──► SQLite jobs.db
+                    │ + rate limit│
+                    └──────┬──────┘
+                           │
+                    ┌──────▼──────┐
+                    │ Worker farm │  (24/7, concurrent)
+                    └──────┬──────┘
+                           │
+         ┌─────────────────┼─────────────────┐
+         ▼                 ▼                 ▼
+   ffprobe/yt-dlp      FFmpeg encode    Evidence bundle
+   source SHA-256      output SHA-256    custody_ledger.jsonl
+```
 
-## Technical edge
-
-| Capability | Standard scripts | This suite |
-|------------|------------------|------------|
-| Compute path | CPU `libx264` | `h264_videotoolbox` / `hevc_videotoolbox` on Apple Silicon |
-| Disk I/O | Temp download + re-read | Single-pass RAM pipe; one final write |
-| HDR | Clamped to 8-bit SDR | `p010le` + Rec.2020 when source is HDR |
-| Audio | Stereo downmix | Up to 5.1 via `aac_at` (macOS) or `aac` fallback |
-| Integrity | None | SHA-256 manifest + signed log |
-| Operations | Manual one-offs | CLI, batch playlists, watch-folder daemon + dashboard |
-| Remote queue | None | Webhook API (`serve`) — queue from phone |
-| Backup | Manual copy | Auto S3 / NAS / rsync after SHA-256 verify |
-| Mastering | Generic MP4 | First-class ProRes workflow (`prores` command) |
-
-## Prerequisites
-
-### macOS (M-series recommended)
+## Deploy on M5 Mac (production)
 
 ```bash
 brew install ffmpeg
 pip install -r requirements.txt
+cp deploy/com.hibs.forensic-media-*.plist ~/Library/LaunchAgents/
+# Edit plists: paths, MEDIA_SUITE_API_TOKEN, MEDIA_SUITE_FORENSIC_HMAC_KEY
+
+export MEDIA_SUITE_API_TOKEN="$(openssl rand -hex 32)"
+export MEDIA_SUITE_FORENSIC_HMAC_KEY="$(openssl rand -hex 32)"
+export MEDIA_SUITE_FORENSIC_MODE=true
+export MEDIA_SUITE_PRESERVE_SOURCE=true
+
+python3 m5_forensic_media_suite.py doctor
 ```
 
-FFmpeg builds from Homebrew expose **VideoToolbox** (`h264_videotoolbox`, `hevc_videotoolbox`) and **AudioToolbox** (`aac_at`) encoders on Apple Silicon.
+**Three processes:**
 
-### Linux / CI
+| Process | Command | Role |
+|---------|---------|------|
+| API | `python3 m5_forensic_media_suite.py api` | Internet-facing job submission |
+| Worker | `python3 m5_forensic_media_suite.py worker --concurrency 2` | 24/7 transcode farm |
+| TLS edge | Caddy/nginx (`deploy/nginx-api.conf`) | HTTPS termination |
+
+## 1. Advanced any-file converter
+
+- **Local:** FFmpeg direct read — `mkv`, `mp4`, `mov`, `wav`, `flac`, etc.
+- **Remote:** yt-dlp → FFmpeg pipe (YouTube + 1000+ sites)
+- **Folder batch:** `batch /path/inbox/ -f mp3`
+- **Remux-aware:** Dolby Vision strict mode uses `-c:v copy` (bitstream preservation)
 
 ```bash
-sudo apt-get install -y ffmpeg   # or your distro equivalent
-pip install -r requirements.txt
+python3 m5_forensic_media_suite.py convert "/path/movie.mkv" -f mp4
+python3 m5_forensic_media_suite.py batch "/path/inbox/" -f mp3
 ```
 
-Hardware encoders fall back to `libx264` / `libx265` / `aac` automatically.
+## 2. Internet-facing webhook / API
 
-## Quick start
-
-Verify tooling:
+FastAPI with bearer auth, rate limiting, CORS, job status:
 
 ```bash
-python m5_forensic_media_suite.py doctor
+export MEDIA_SUITE_API_TOKEN="your-secret"
+python3 m5_forensic_media_suite.py api --host 127.0.0.1 --port 8765
 ```
 
-Convert a local file:
-
 ```bash
-python m5_forensic_media_suite.py convert "/path/to/movie.mkv" -f mp4
-python m5_forensic_media_suite.py convert "/path/to/track.flac" -f mp3
-```
-
-Convert a remote URL (YouTube, etc.):
-
-```bash
-python m5_forensic_media_suite.py convert "https://www.youtube.com/watch?v=VIDEO_ID" -f mp4
-```
-
-Batch an entire folder or playlist:
-
-```bash
-python m5_forensic_media_suite.py batch "/path/to/inbox/" -f mp3
-python m5_forensic_media_suite.py batch "https://www.youtube.com/playlist?list=PLAYLIST_ID" -f m4a
-```
-
-Watch-folder daemon with terminal dashboard:
-
-```bash
-python m5_forensic_media_suite.py watch
-```
-
-Add links to `download_queue.txt` (optionally `URL | format` per line). Outputs land in `forensic_outputs/` with a rolling `forensic_manifest.log`.
-
-### ProRes mastering (first-class)
-
-```bash
-python m5_forensic_media_suite.py prores "YOUTUBE_URL" --profile hq
-# Profiles: lt | 422 | hq | 4444
-# Output: forensic_outputs/prores_masters/<title>.mov
-```
-
-Queue a ProRes job: `https://youtube.com/... | prores:hq`
-
-### Remote webhook API (queue from your phone)
-
-Terminal 1 — process the queue:
-
-```bash
-python m5_forensic_media_suite.py watch
-```
-
-Terminal 2 — expose the webhook (set a secret token first):
-
-```bash
-export MEDIA_SUITE_WEBHOOK_TOKEN="your-long-random-secret"
-python m5_forensic_media_suite.py serve --port 8765
-```
-
-From your phone (same LAN or tunneled host):
-
-```bash
-curl -X POST http://YOUR_MAC_IP:8765/queue \
-  -H "Authorization: Bearer your-long-random-secret" \
+# Submit job
+curl -X POST https://media.example.com/v1/jobs \
+  -H "Authorization: Bearer $MEDIA_SUITE_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"url":"https://www.youtube.com/watch?v=VIDEO_ID","format":"mp4"}'
+  -d '{"input":"/path/file.mkv","format":"mp4","forensic_mode":true}'
+
+# Poll status
+curl -H "Authorization: Bearer $MEDIA_SUITE_API_TOKEN" \
+  https://media.example.com/v1/jobs/JOB_ID
 ```
 
-ProRes via webhook:
+Put **nginx/Caddy** in front for TLS (`deploy/nginx-api.conf`). Never expose port 8765 directly to the internet.
 
-```json
-{"url": "https://www.youtube.com/watch?v=...", "format": "prores", "prores_profile": "hq"}
-```
+## 3. Forensic / legal evidence workflows
 
-Health check: `GET /health`
+When `--forensic` or `forensic_mode: true`:
 
-### S3 / NAS auto-upload (after verification)
-
-Upload runs only **after** SHA-256 signing succeeds.
+| Artifact | Location |
+|----------|----------|
+| Source SHA-256 | Local files hashed before transcode; remote archived when `preserve_source` |
+| Output SHA-256 | After encode |
+| Chain-of-custody JSON | `forensic_outputs/evidence_bundles/<job_id>/chain_of_custody.json` |
+| Append-only ledger | `forensic_outputs/evidence_bundles/custody_ledger.jsonl` |
+| HMAC signature | Set `MEDIA_SUITE_FORENSIC_HMAC_KEY` for tamper-evident manifests |
+| Tool versions | ffmpeg, ffprobe, yt-dlp, Python recorded in bundle |
 
 ```bash
-export MEDIA_SUITE_UPLOAD_ENABLED=true
-
-# AWS S3 (or MinIO-compatible)
-export MEDIA_SUITE_S3_BUCKET=my-media-archive
-export MEDIA_SUITE_S3_PREFIX=forensic/
-export MEDIA_SUITE_S3_REGION=eu-west-2
-# Optional: MEDIA_SUITE_S3_ENDPOINT_URL=https://minio.example.com
-
-# NAS mount (NFS/SMB path on your Mac)
-export MEDIA_SUITE_NAS_PATH=/Volumes/NAS/forensic_inbox
-
-# Optional rsync push
-export MEDIA_SUITE_RSYNC_TARGET=user@nas.local:/volume1/forensic/
+python3 m5_forensic_media_suite.py convert input.mkv -f mp4 \
+  --forensic --preserve-source --case-id CASE-2026-001
 ```
 
-Destinations are logged in `forensic_manifest.log` under `UPLOAD=`.
+**Honest limit:** This records hashes and metadata per SWGDE-style integrity practice. It is not a certified legal platform — consult counsel for admissibility requirements.
 
-## Output formats
+## 4. Unattended 24/7 farm processing
 
-| Flag | Container | Notes |
-|------|-----------|-------|
-| `mp4` | H.264 + AAC | `+faststart`, HDR when detected |
-| `mkv` | HEVC + AAC | Archive-oriented |
-| `mov` | H.264 + AAC | QuickTime container |
-| `webm` | VP9 + Opus | Web delivery |
-| `mp3` | MP3 VBR | 48 kHz |
-| `wav` | PCM 16-bit | Broadcast sample rate |
-| `m4a` | AAC | Audio-only |
-| `flac` | FLAC | Lossless audio |
-| `ogg` | Vorbis | Open audio |
-| `prores` | ProRes `.mov` | `prores` command or `-f prores` |
+SQLite-backed queue with retries and dead-letter:
 
-### Extra flags
-
-- `--normalize` — EBU R128 loudness (`-23 LUFS`) for broadcast compliance
-- `--no-subs` — skip subtitle fetch/embed
-- `--no-classify` — disable music → `audio_masters/` routing
-- `--no-upload` — skip remote upload even when configured
-
-## Architecture
-
+```bash
+python3 m5_forensic_media_suite.py worker --concurrency 2
 ```
-Local file / URL / folder
-        │
-        ├─ local ──► ffprobe metadata ──► ffmpeg -i file
-        │
-        └─ remote ─► yt-dlp (-o -) ──pipe──► ffmpeg (-i pipe:0)
-                        │
-        ┌───────────────┼───────────────┐
-        ▼               ▼               ▼
- VideoToolbox      AudioToolbox     subtitles
-        │               │               │
-        └──────► forensic_outputs/ ◄───┘
-                        │
-                 SHA-256 manifest
-                        │
-              S3 / NAS / rsync upload
+
+| Job state | Meaning |
+|-----------|---------|
+| `pending` | Queued |
+| `running` | Worker claimed |
+| `completed` | Success + result JSON |
+| `dead` | Failed after max retries |
+
+Env: `MEDIA_SUITE_WORKER_CONCURRENCY`, `MEDIA_SUITE_JOB_MAX_RETRIES`, `MEDIA_SUITE_JOBS_DB`
+
+## 5. HDR / Dolby Vision / 5.1 preservation
+
+**Strict modes fail loudly** if the source cannot meet requirements:
+
+| Flag | Behavior |
+|------|----------|
+| `--strict-hdr` | Requires HDR10/HLG signaling; encodes with `p010le` + color metadata |
+| `--strict-dv` | Requires Dolby Vision; uses **bitstream copy** (`-c:v copy`) to guarantee DV preservation |
+| `--strict-surround` | Requires ≥6 channels; fails on stereo sources |
+
+```bash
+python3 m5_forensic_media_suite.py convert input.mkv -f mkv --strict-dv --forensic
 ```
+
+**Honest limit:** Dolby Vision *guarantee* only applies in strict DV + copy mode to `mkv`/`mp4`/`mov`. Transcoding DV to SDR/HDR10 destroys the DV layer — the suite will refuse rather than silently degrade.
 
 ## Environment variables
 
 | Variable | Purpose |
 |----------|---------|
-| `MEDIA_SUITE_WEBHOOK_TOKEN` | Bearer token for `/queue` API |
-| `MEDIA_SUITE_WEBHOOK_PORT` | Webhook port (default `8765`) |
-| `MEDIA_SUITE_UPLOAD_ENABLED` | `true` to enable post-verify upload |
-| `MEDIA_SUITE_S3_BUCKET` | S3 bucket name |
-| `MEDIA_SUITE_NAS_PATH` | Mounted NAS directory |
-| `MEDIA_SUITE_RSYNC_TARGET` | `user@host:/path` rsync target |
-| `MEDIA_SUITE_PRORES_PROFILE` | Default ProRes tier (`hq`) |
+| `MEDIA_SUITE_API_TOKEN` | Bearer token (required for API) |
+| `MEDIA_SUITE_FORENSIC_HMAC_KEY` | HMAC-SHA256 manifest signing |
+| `MEDIA_SUITE_FORENSIC_MODE` | Default forensic bundles on |
+| `MEDIA_SUITE_PRESERVE_SOURCE` | Archive remote source before transcode |
+| `MEDIA_SUITE_STRICT_HDR/DOLBY_VISION/SURROUND` | Global strict preservation defaults |
+| `MEDIA_SUITE_WORKER_CONCURRENCY` | Parallel farm workers |
 
-## Project layout
+## Output formats
 
-```
-media_suite/
-  cli.py           # argparse entry
-  pipeline.py      # core transcode + ProRes workflow
-  encoders.py      # platform codec matrices
-  input.py         # local file / folder / URL detection
-  probe.py         # ffprobe + yt-dlp metadata
-  queue.py         # thread-safe queue file
-  webhook.py       # remote queue HTTP API
-  upload.py        # S3 / NAS / rsync after verify
-  daemon.py        # queue watcher
-  dashboard.py     # curses UI
-  integrity.py     # SHA-256 + manifest
-  telemetry.py     # live FPS / speed
-  notifications.py # macOS / Linux alerts
-m5_forensic_media_suite.py
-download_queue.txt
-requirements.txt
-```
+`mp4` `mkv` `mov` `webm` `mp3` `wav` `m4a` `flac` `ogg` `prores`
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT

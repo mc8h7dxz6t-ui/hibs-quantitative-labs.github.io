@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hibs.forensic-media-worker</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/opt/forensic-media/m5_forensic_media_suite.py</string>
+        <string>worker</string>
+        <string>--concurrency</string>
+        <string>2</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MEDIA_SUITE_FORENSIC_MODE</key>
+        <string>true</string>
+        <key>MEDIA_SUITE_PRESERVE_SOURCE</key>
+        <string>true</string>
+        <key>MEDIA_SUITE_WORKER_CONCURRENCY</key>
+        <string>2</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/var/log/forensic-media-worker.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/forensic-media-worker.err</string>
+</dict>
+</plist>

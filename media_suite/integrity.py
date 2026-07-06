@@ -27,27 +27,38 @@ def append_manifest(
     encoder_video: str,
     encoder_audio: str,
     upload_destinations: list[str] | None = None,
+    source_hash: str | None = None,
+    job_id: str | None = None,
 ) -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     manifest = OUTPUT_DIR / "forensic_manifest.log"
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     upload_field = ",".join(upload_destinations) if upload_destinations else "local-only"
     line = (
-        f"TIMESTAMP={stamp} | URL={url} | FILE={output_path.name} | "
-        f"SHA256={file_hash} | FPS={end_fps} | SPEED={end_speed} | "
-        f"VENC={encoder_video} | AENC={encoder_audio} | UPLOAD={upload_field}\n"
+        f"TIMESTAMP={stamp} | JOB={job_id or '-'} | SOURCE={url} | FILE={output_path.name} | "
+        f"SOURCE_SHA256={source_hash or '-'} | OUTPUT_SHA256={file_hash} | "
+        f"FPS={end_fps} | SPEED={end_speed} | VENC={encoder_video} | AENC={encoder_audio} | "
+        f"UPLOAD={upload_field}\n"
     )
     with manifest.open("a", encoding="utf-8") as handle:
         handle.write(line)
 
 
-def print_integrity_manifest(path: Path, container: str, file_hash: str) -> None:
+def print_integrity_manifest(
+    path: Path,
+    container: str,
+    file_hash: str,
+    *,
+    source_hash: str | None = None,
+) -> None:
     bar = "=" * 80
     print(f"\n{bar}")
     print("                FORENSIC DIGITAL MEDIA INTEGRITY MANIFEST                ")
     print(bar)
     print(f" Target File Asset : {path}")
     print(f" Target Container  : {container.upper()}")
-    print(f" SHA-256 Signature : {file_hash}")
-    print(" Status Flag       : VERIFIED SIGNED MASTER (Zero-Alteration Chain Verified)")
+    if source_hash:
+        print(f" Source SHA-256    : {source_hash}")
+    print(f" Output SHA-256    : {file_hash}")
+    print(" Status Flag       : CHAIN OF CUSTODY RECORDED (source + output hashed)")
     print(f"{bar}\n")
