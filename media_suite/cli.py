@@ -73,6 +73,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("watch", help="Legacy text-queue dashboard")
     sub.add_parser("doctor", help="Verify tooling and configuration")
 
+    desktop = sub.add_parser("desktop", help="Launch HIBS Media Studio desktop app")
+    desktop.add_argument("--host", default="127.0.0.1")
+    desktop.add_argument("--port", type=int, default=None)
+    desktop.add_argument("--browser", action="store_true", help="Open browser if pywebview unavailable")
+
     # Legacy alias
     serve = sub.add_parser("serve", help="Alias for api")
     serve.add_argument("--host", default=API_HOST)
@@ -137,6 +142,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "doctor":
         return cmd_doctor()
+
+    if args.command == "desktop":
+        from desktop.__main__ import launch_desktop
+
+        return launch_desktop(host=args.host, port=args.port, browser_fallback=args.browser)
 
     if args.command == "watch":
         run_dashboard()

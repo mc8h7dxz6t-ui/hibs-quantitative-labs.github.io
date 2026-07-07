@@ -17,6 +17,37 @@ python -m media_engine input.mkv -f mp4 --plan-only    # see remux vs transcode 
 python -m media_engine input.mkv -f mp4 --case-id X    # full pipeline + custody trace
 ```
 
+## Desktop app (HIBS Media Studio)
+
+Installable desktop with a native shell and futuristic UI — wired directly to `ConversionEngine`.
+
+```bash
+# Install (includes CLI + engine + desktop)
+pip install -e ".[desktop]"
+
+# Or from requirements
+pip install -r requirements.txt
+pip install "pywebview>=5.0"
+
+# Launch
+hibs-media-studio
+# or
+python3 m5_forensic_media_suite.py desktop
+```
+
+**Desktop features:**
+- Drag-and-drop or native file picker
+- Stream inspector (HDR, Dolby Vision, surround)
+- One-click format selection (mp4, mkv, prores, mp3, …)
+- Industry standards toggles (EBU R128, forensic custody, strict HDR/DV/5.1)
+- Conversion plan preview before execute
+- Live progress via WebSocket (fps, speed, time)
+- Job history and system doctor panel
+
+**Linux note:** pywebview requires GTK or Qt (`sudo apt install python3-gi gir1.2-webkit2-4.1` on Debian/Ubuntu).
+
+**Browser fallback** (no pywebview): `python3 m5_forensic_media_suite.py desktop --browser`
+
 We own: `MediaCatalog`, `ConversionPlan`, per-stream remux/transcode reasons, boundary SHA-256.  
 We delegate: codec math to FFmpeg (swappable backend).
 
