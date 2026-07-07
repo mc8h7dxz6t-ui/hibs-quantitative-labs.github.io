@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HIBS Media Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="bg-glow bg-glow-a"></div>
+  <div class="bg-glow bg-glow-b"></div>
+
+  <div class="app">
+    <aside class="sidebar glass">
+      <div class="brand">
+        <div class="brand-icon">◈</div>
+        <div>
+          <h1>HIBS Media Studio</h1>
+          <p>Forensic conversion engine</p>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-btn active" data-view="convert">Convert</button>
+        <button class="nav-btn" data-view="jobs">Jobs</button>
+        <button class="nav-btn" data-view="standards">Standards</button>
+        <button class="nav-btn" data-view="system">System</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div id="health-pill" class="pill pill-warn">Checking…</div>
+        <span class="version" id="app-version">v2.0</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <!-- CONVERT VIEW -->
+      <section id="view-convert" class="view active">
+        <header class="page-header">
+          <h2>Convert Media</h2>
+          <p>Any file or URL → industry-standard output with custody trace</p>
+        </header>
+
+        <div class="convert-grid">
+          <div class="panel glass" id="drop-panel">
+            <div class="dropzone" id="dropzone">
+              <div class="dropzone-inner">
+                <span class="drop-icon">⬡</span>
+                <h3>Drop media here</h3>
+                <p>or paste a path / URL below</p>
+                <button type="button" class="btn btn-ghost" id="btn-browse">Browse files</button>
+              </div>
+            </div>
+            <div class="source-row">
+              <input type="text" id="source-input" placeholder="/path/to/file.mkv  or  https://…" spellcheck="false" />
+              <button type="button" class="btn btn-accent" id="btn-probe">Inspect</button>
+            </div>
+          </div>
+
+          <div class="panel glass inspector" id="inspector">
+            <h3>Stream Inspector</h3>
+            <div id="probe-empty" class="empty-state">Inspect a source to see streams, HDR, and surround layout.</div>
+            <div id="probe-data" class="probe-data hidden"></div>
+          </div>
+
+          <div class="panel glass settings-panel">
+            <h3>Output &amp; Standards</h3>
+
+            <label class="field-label">Format</label>
+            <div class="format-grid" id="format-grid"></div>
+
+            <div id="prores-row" class="hidden">
+              <label class="field-label">ProRes profile</label>
+              <select id="prores-profile">
+                <option value="lt">422 LT</option>
+                <option value="422">422</option>
+                <option value="hq" selected>422 HQ</option>
+                <option value="4444">4444</option>
+              </select>
+            </div>
+
+            <div class="toggle-grid">
+              <label class="toggle"><input type="checkbox" id="opt-forensic" checked /><span>Forensic custody bundle</span></label>
+              <label class="toggle"><input type="checkbox" id="opt-preserve" checked /><span>Preserve remote source</span></label>
+              <label class="toggle"><input type="checkbox" id="opt-normalize" /><span>EBU R128 loudness (-23 LUFS)</span></label>
+              <label class="toggle"><input type="checkbox" id="opt-subs" checked /><span>Embed subtitles</span></label>
+              <label class="toggle"><input type="checkbox" id="opt-strict-hdr" /><span>Strict HDR</span></label>
+              <label class="toggle"><input type="checkbox" id="opt-strict-dv" /><span>Strict Dolby Vision (copy)</span></label>
+              <label class="toggle"><input type="checkbox" id="opt-strict-surround" /><span>Strict 5.1 surround</span></label>
+            </div>
+
+            <div class="action-row">
+              <button type="button" class="btn btn-ghost" id="btn-plan">Preview plan</button>
+              <button type="button" class="btn btn-primary" id="btn-convert" disabled>Start conversion</button>
+            </div>
+          </div>
+
+          <div class="panel glass plan-panel hidden" id="plan-panel">
+            <h3>Conversion Plan</h3>
+            <pre id="plan-output" class="plan-output"></pre>
+          </div>
+
+          <div class="panel glass progress-panel hidden" id="progress-panel">
+            <h3>Live Progress</h3>
+            <div class="progress-ring-wrap">
+              <svg class="progress-ring" viewBox="0 0 120 120">
+                <circle class="ring-bg" cx="60" cy="60" r="52" />
+                <circle class="ring-fg" id="progress-ring" cx="60" cy="60" r="52" />
+              </svg>
+              <div class="progress-pct" id="progress-pct">0%</div>
+            </div>
+            <p class="progress-msg" id="progress-msg">Waiting…</p>
+            <div class="telemetry">
+              <span>FPS <strong id="tel-fps">—</strong></span>
+              <span>Speed <strong id="tel-speed">—</strong></span>
+              <span>Time <strong id="tel-time">—</strong></span>
+            </div>
+            <div id="result-box" class="result-box hidden"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- JOBS VIEW -->
+      <section id="view-jobs" class="view">
+        <header class="page-header">
+          <h2>Job History</h2>
+          <p>Recent conversions on this machine</p>
+        </header>
+        <div class="panel glass">
+          <div id="jobs-list" class="jobs-list"></div>
+        </div>
+      </section>
+
+      <!-- STANDARDS VIEW -->
+      <section id="view-standards" class="view">
+        <header class="page-header">
+          <h2>Industry Standards</h2>
+          <p>Built into the owned ConversionEngine construct</p>
+        </header>
+        <div class="standards-grid" id="standards-grid"></div>
+      </section>
+
+      <!-- SYSTEM VIEW -->
+      <section id="view-system" class="view">
+        <header class="page-header">
+          <h2>System Check</h2>
+          <p>Toolchain and hardware encoder availability</p>
+        </header>
+        <div class="panel glass">
+          <div id="doctor-output" class="doctor-output"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

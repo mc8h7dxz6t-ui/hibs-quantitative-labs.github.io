@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hibs.forensic-media-api</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/opt/forensic-media/m5_forensic_media_suite.py</string>
+        <string>api</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8765</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MEDIA_SUITE_API_TOKEN</key>
+        <string>CHANGE_ME</string>
+        <key>MEDIA_SUITE_FORENSIC_MODE</key>
+        <string>true</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/var/log/forensic-media-api.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/forensic-media-api.err</string>
+</dict>
+</plist>
