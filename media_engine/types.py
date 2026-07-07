@@ -126,6 +126,7 @@ class ConversionPlan:
     output_format: str
     mappings: list[StreamMapping]
     global_mode: ConversionMode
+    prores_profile: str = "hq"
     ffmpeg_args: list[str] = field(default_factory=list)
     preservation_notes: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -142,21 +143,26 @@ class ConversionRequest:
     input_path: Path
     output_format: str
     output_dir: Path | None = None
-    # Preservation requirements — engine fails if impossible
+    output_path: Path | None = None
     require_bitstream_video: bool = False
     require_hdr_metadata: bool = False
     require_surround_audio: bool = False
+    require_dolby_vision_copy: bool = False
     embed_subtitles: bool = True
+    normalize_lufs: bool = False
+    prores_profile: str = "hq"
     audio_stream_index: int | None = None
     video_stream_index: int | None = None
     case_id: str | None = None
+    job_id: str | None = None
 
 
 @dataclass
 class CustodyEvent:
     stage: CustodyStage
     sha256: str | None
-    path: str | None
+    md5: str | None = None
+    path: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     timestamp_utc: str = ""
 
@@ -166,5 +172,10 @@ class EngineResult:
     success: bool
     plan: ConversionPlan | None = None
     output_path: Path | None = None
+    source_sha256: str | None = None
+    output_sha256: str | None = None
+    output_md5: str | None = None
     custody_events: list[CustodyEvent] = field(default_factory=list)
+    custody_bundle: Path | None = None
+    ffmpeg_command: list[str] = field(default_factory=list)
     error: str | None = None

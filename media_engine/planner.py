@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from media_engine.hardware import pick_aac_encoder
 from media_engine.types import (
     ColorScience,
     ConversionMode,
@@ -44,10 +45,15 @@ VIDEO_OUTPUT = {"mp4", "mkv", "mov", "webm"}
 
 
 def _output_path(request: ConversionRequest, catalog: MediaCatalog) -> Path:
+    if request.output_path:
+        request.output_path.parent.mkdir(parents=True, exist_ok=True)
+        return request.output_path
     out_dir = request.output_dir or catalog.source_path.parent / "converted"
     out_dir.mkdir(parents=True, exist_ok=True)
-    stem = catalog.source_path.stem
-    return out_dir / f"{stem}.{request.output_format}"
+    ext = request.output_format.lower()
+    if ext == "prores":
+        ext = "mov"
+    return out_dir / f"{catalog.source_path.stem}.{ext}"
 
 
 def _can_copy_stream(codec: str, output_fmt: str, kind: StreamKind) -> bool:
@@ -105,6 +111,63 @@ def build_plan(request: ConversionRequest, catalog: MediaCatalog) -> ConversionP
                 f"require_bitstream_video: cannot copy {video.codec} into .{out_fmt}"
             )
 
+    if request.require_dolby_vision_copy:
+        if not video or video.color_science != ColorScience.DOLBY_VISION:
+            raise ValueError("require_dolby_vision_copy: source is not Dolby Vision")
+        request.require_bitstream_video = True
+
+    vid_idx = request.video_stream_index if request.video_stream_index is not None else (
+        video.index if video else None
+    )
+    aud_idx = request.audio_stream_index if request.audio_stream_index is not None else (
+        audio.index if audio else None
+    )
+
+    # --- ProRes mastering output ---
+    if out_fmt == "prores":
+        if not video or vid_idx is None:
+            raise ValueError("ProRes requires a video stream")
+        mappings.append(
+            StreamMapping(
+                input_index=vid_idx,
+                kind=StreamKind.VIDEO,
+                mode=ConversionMode.TRANSCODE,
+                output_codec="prores",
+                reason=f"ProRes {request.prores_profile} mastering",
+            )
+        )
+        if audio and aud_idx is not None:
+            mappings.append(
+                StreamMapping(
+                    input_index=aud_idx,
+                    kind=StreamKind.AUDIO,
+                    mode=ConversionMode.TRANSCODE,
+                    output_codec=pick_aac_encoder(),
+                    reason="ProRes master audio",
+                )
+            )
+        if request.embed_subtitles:
+            for sub in catalog.subtitle_streams:
+                mappings.append(
+                    StreamMapping(
+                        input_index=sub.index,
+                        kind=StreamKind.SUBTITLE,
+                        mode=ConversionMode.BITSTREAM_COPY if sub.is_text_subtitle else ConversionMode.TRANSCODE,
+                        output_codec="copy" if sub.is_text_subtitle else "mov_text",
+                        reason="ProRes subtitle passthrough",
+                    )
+                )
+        return ConversionPlan(
+            catalog=catalog,
+            output_path=output_path,
+            output_format="prores",
+            mappings=mappings,
+            global_mode=ConversionMode.TRANSCODE,
+            prores_profile=request.prores_profile,
+            preservation_notes=notes,
+            warnings=warnings,
+        )
+
     # --- Audio-only output ---
     if out_fmt in AUDIO_OUTPUT:
         if not audio:
@@ -129,13 +192,8 @@ def build_plan(request: ConversionRequest, catalog: MediaCatalog) -> ConversionP
         )
 
     # --- Video output ---
-    if not video:
+    if not video or vid_idx is None:
         raise ValueError(f"No video stream for .{out_fmt} output")
-
-    vid_idx = request.video_stream_index if request.video_stream_index is not None else video.index
-    aud_idx = request.audio_stream_index if request.audio_stream_index is not None else (
-        audio.index if audio else None
-    )
 
     # Dolby Vision: only bitstream copy preserves DV layer
     if video.color_science == ColorScience.DOLBY_VISION:

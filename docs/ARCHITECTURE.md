@@ -135,11 +135,31 @@ media_engine/
   types.py           # Domain types — we own this schema
   probe.py           # ffprobe → MediaCatalog
   planner.py         # ConversionRequest + Catalog → ConversionPlan
-  custody.py         # CustodyLedger boundary hashes
+  custody.py         # CustodyLedger boundary hashes (SHA-256 + MD5)
+  standards.py       # EBU R128, ISOBMFF faststart, metadata preservation flags
+  hardware.py        # VideoToolbox / software encoder selection
   backend_ffmpeg.py  # Plan → ffmpeg argv (thin backend)
   engine.py          # Orchestrator (5 stages)
   __main__.py        # CLI: probe-only, plan-only, convert
+
+media_suite/
+  engine_bridge.py   # Single integration point: materialize → ConversionEngine → finalize
+  pipeline.py        # Thin wrapper (CLI/worker/API call engine_bridge only)
 ```
+
+### Integration boundary
+
+`media_suite.pipeline` no longer builds FFmpeg argv inline. All conversion flows through:
+
+```
+run_transcode() → engine_bridge.run_via_engine()
+  → materialize_source()     # local path or yt-dlp download
+  → ConversionEngine.convert()
+  → finalize_engine_result() # manifest, upload, evidence bundle
+```
+
+Industry standards (EBU R128 loudnorm, ISOBMFF `+faststart`, metadata/chapter preservation,
+MD5+SHA-256 custody digests) live in `media_engine/standards.py` and `backend_ffmpeg.py`.
 
 ---
 
