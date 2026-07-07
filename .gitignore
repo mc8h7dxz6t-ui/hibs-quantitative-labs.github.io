@@ -1,5 +1,6 @@
 # Forensic outputs (generated at runtime)
 forensic_outputs/
+engine_output/
 m5_forensic_outputs/
 
 # Media artifacts

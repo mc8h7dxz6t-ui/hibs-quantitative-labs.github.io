@@ -1,4 +1,28 @@
-# Forensic Media Suite v2
+# Media Engine
+
+Two layers in this repo:
+
+| Layer | Path | Purpose |
+|-------|------|---------|
+| **Owned construct** | `media_engine/` | Probe → plan → custody → execute (we own decisions) |
+| **Workflow suite** | `media_suite/` | CLI, API, job queue, upload (orchestration) |
+
+**Start here for how conversion actually works:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+
+## Media Engine (owned code)
+
+```bash
+python -m media_engine input.mkv -f mp4 --probe-only   # catalog streams
+python -m media_engine input.mkv -f mp4 --plan-only    # see remux vs transcode plan
+python -m media_engine input.mkv -f mp4 --case-id X    # full pipeline + custody trace
+```
+
+We own: `MediaCatalog`, `ConversionPlan`, per-stream remux/transcode reasons, boundary SHA-256.  
+We delegate: codec math to FFmpeg (swappable backend).
+
+---
+
+# Forensic Media Suite (workflow layer) v2
 
 Production **any file → any format** media farm with legal chain-of-custody, strict stream preservation policies, SQLite job queue, and internet-facing FastAPI.
 
